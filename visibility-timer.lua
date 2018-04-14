@@ -16,6 +16,8 @@ function enable_source()
 		obs.obs_source_set_enabled(source, true)
 	end
 
+	obs.obs_source_release(source);
+
 	obs.timer_remove(enable_source)
 end
 
@@ -25,6 +27,8 @@ function disable_source()
 	if source ~= nil then
 		obs.obs_source_set_enabled(source, false)
 	end
+
+	obs.obs_source_release(source)
 
 	obs.timer_remove(disable_source)
 end
@@ -36,6 +40,8 @@ function repeat_hold()
 		obs.obs_source_set_enabled(source, not obs.obs_source_enabled(source))
 	end
 
+	obs.obs_source_release(source)
+
 	obs.timer_remove(repeat_hold)
 	obs.timer_add(repeat_source, total_ms)
 end
@@ -46,6 +52,8 @@ function repeat_source()
 	if source ~= nil then
 		obs.obs_source_set_enabled(source, not obs.obs_source_enabled(source))
 	end
+
+	obs.obs_source_release(source)
 
 	obs.timer_remove(repeat_source)
 	obs.timer_add(repeat_hold, hold)
@@ -67,6 +75,8 @@ function start_timer()
 		end
 	end
 
+	obs.obs_source_release(source)
+
 	obs.timer_remove(start_timer)
 end
 
@@ -80,6 +90,8 @@ function activate(activating)
 	if source == nil then
 		return
 	end
+
+	obs.obs_source_release(source)
 
 	activated = activating
 
@@ -119,31 +131,39 @@ end
 
 ----------------------------------------------------------
 
--- Can't get this to work
+function settings_modified(props, prop, settings)
+	local mode_setting = obs.obs_data_get_string(settings, "mode")
+	local start = obs.obs_properties_get(props, "start_visible")
+	local hold = obs.obs_properties_get(props, "hold")
 
---function settings_modified(props, settings)
---	local prop = obs.obs_properties_get(props, "start_visible")
---	local mode_setting = obs.obs_settings_get(settings, "mode")
+	local enabled
 
---	if (mode_setting == "mode_repeat") then
---		obs.obs_property_set_visible(prop, true)
---	else
---		obs.obs_property_set_visible(prop, false)
---	end
+	if (mode_setting == "mode_repeat") then
+		enabled = true
+	else
+		enabled = false
+	end
 
---	return true
---end
+	obs.obs_property_set_visible(start, enabled)
+	obs.obs_property_set_visible(hold, enabled)
+
+	return true
+end
 
 -- A function named script_properties defines the properties that the user
 -- can change for the entire script module itself
 function script_properties()
 	local props = obs.obs_properties_create()
 
+	local mode = obs.obs_properties_add_list(props, "mode", "Mode", obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING)
+	obs.obs_property_list_add_string(mode, "Hide source after specified time", "mode_hide")
+	obs.obs_property_list_add_string(mode, "Show source after specified time", "mode_show")
+	obs.obs_property_list_add_string(mode, "Repeat", "mode_repeat")
+
 	local p = obs.obs_properties_add_list(props, "source", "Source", obs.OBS_COMBO_TYPE_EDITABLE, obs.OBS_COMBO_FORMAT_STRING)
 	local sources = obs.obs_enum_sources()
 	if sources ~= nil then
 		for _, source in ipairs(sources) do
-			source_id = obs.obs_source_get_id(source)
 			local name = obs.obs_source_get_name(source)
 			local flags = obs.obs_source_get_flags(source)
 			if (flags and obs.OBS_SOURCE_VIDEO) ~= 0 then
@@ -153,18 +173,13 @@ function script_properties()
 	end
 	obs.source_list_release(sources)
 
-	local mode = obs.obs_properties_add_list(props, "mode", "Mode", obs.OBS_COMBO_TYPE_LIST, obs.OBS_COMBO_FORMAT_STRING);
-	obs.obs_property_list_add_string(mode, "Hide source after specified time", "mode_hide");
-	obs.obs_property_list_add_string(mode, "Show source after specified time", "mode_show");
-	obs.obs_property_list_add_string(mode, "Repeat", "mode_repeat");
-
 	obs.obs_properties_add_int(props, "delay", "Delay after activated (ms)", 0, 3600000, 1)
 	obs.obs_properties_add_int(props, "duration", "Duration (seconds)", 1, 3600, 1)
-	obs.obs_properties_add_int(props, "hold", "Repeat hold time (seconds)", 1, 3600, 1)
+	obs.obs_properties_add_int(props, "hold", "Hold time (seconds)", 1, 3600, 1)
 
-	obs.obs_properties_add_bool(props, "start_visible", "Start visible (repeat mode)");
+	obs.obs_properties_add_bool(props, "start_visible", "Start visible")
 
-	--obs.obs_property_set_modified_callback(p, settings_modified);
+	obs.obs_property_set_modified_callback(mode, settings_modified)
 
 	return props
 end
@@ -213,4 +228,6 @@ function script_unload()
 	if source ~= nil then
 		obs.obs_source_set_enabled(source, true)
 	end
+
+	obs.obs_source_release(source)
 end
