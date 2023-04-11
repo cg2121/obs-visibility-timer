@@ -9,73 +9,63 @@ hold          = 0
 start_visible = true
 settings_     = nil
 
+function get_item()
+	local source = obs.obs_frontend_get_current_scene()
+	local scene = obs.obs_scene_from_source(source)
+	local item = obs.obs_scene_find_source(scene, source_name)
+	obs.obs_source_release(source)
+	return item
+end
+
 function enable_source()
-	local source = obs.obs_get_source_by_name(source_name)
-
-	if source ~= nil then
-		obs.obs_source_set_enabled(source, true)
-	end
-
-	obs.obs_source_release(source);
+	obs.obs_sceneitem_set_visible(get_item(), true)
 
 	obs.timer_remove(enable_source)
 end
 
 function disable_source()
-	local source = obs.obs_get_source_by_name(source_name)
-
-	if source ~= nil then
-		obs.obs_source_set_enabled(source, false)
-	end
-
-	obs.obs_source_release(source)
+	obs.obs_sceneitem_set_visible(get_item(), false)
 
 	obs.timer_remove(disable_source)
 end
 
 function repeat_hold()
-	local source = obs.obs_get_source_by_name(source_name)
+	local item = get_item()
+	local visible = obs.obs_sceneitem_visible(item)
 
-	if source ~= nil then
-		obs.obs_source_set_enabled(source, not obs.obs_source_enabled(source))
-	end
-
-	obs.obs_source_release(source)
+	obs.obs_sceneitem_set_visible(item, not visible)
 
 	obs.timer_remove(repeat_hold)
-	obs.timer_add(repeat_source, total_ms)
+	obs.timer_add(repeat_source, total_ms + obs.obs_sceneitem_get_transition_duration(item, not visible))
 end
 
 function repeat_source()
-	local source = obs.obs_get_source_by_name(source_name)
+	local item = get_item()
+	local visible = obs.obs_sceneitem_visible(item)
 
-	if source ~= nil then
-		obs.obs_source_set_enabled(source, not obs.obs_source_enabled(source))
-	end
-
-	obs.obs_source_release(source)
+	obs.obs_sceneitem_set_visible(item, not visible)
 
 	obs.timer_remove(repeat_source)
-	obs.timer_add(repeat_hold, hold)
+	obs.timer_add(repeat_hold, hold + obs.obs_sceneitem_get_transition_duration(item, not visible))
 end
 
 function start_timer()
-	local source = obs.obs_get_source_by_name(source_name)
+	local item = get_item()
 
-	if source ~= nil then
-		if (mode == "mode_hide") then
-			obs.obs_source_set_enabled(source, true)
-			obs.timer_add(disable_source, total_ms)
-		elseif (mode == "mode_show") then
-			obs.obs_source_set_enabled(source, false)
-			obs.timer_add(enable_source, total_ms)
-		elseif (mode == "mode_repeat") then
-			obs.obs_source_set_enabled(source, start_visible)
-			obs.timer_add(repeat_source, total_ms)
-		end
+	if item == nil then
+		return
 	end
 
-	obs.obs_source_release(source)
+	if (mode == "mode_hide") then
+		obs.obs_sceneitem_set_visible(item, true)
+		obs.timer_add(disable_source, total_ms + obs.obs_sceneitem_get_transition_duration(item, false))
+	elseif (mode == "mode_show") then
+		obs.obs_sceneitem_set_visible(item, false)
+		obs.timer_add(enable_source, total_ms + obs.obs_sceneitem_get_transition_duration(item, true))
+	elseif (mode == "mode_repeat") then
+		obs.obs_sceneitem_set_visible(item, start_visible)
+		obs.timer_add(repeat_source, total_ms + obs.obs_sceneitem_get_transition_duration(item, not start_visible))
+	end
 
 	obs.timer_remove(start_timer)
 end
@@ -86,16 +76,9 @@ function activate(activating)
 	obs.timer_remove(repeat_source)
 	obs.timer_remove(disable_source)
 	obs.timer_remove(enable_source)
+	obs.timer_remove(toggle_source)
 
 	if activating then
-		local source = obs.obs_get_source_by_name(source_name)
-
-		if source == nil then
-			return
-		end
-
-		obs.obs_source_release(source)
-
 		if delay ~= 0 then
 			obs.timer_add(start_timer, delay)
 		else
@@ -115,11 +98,15 @@ function activate_signal(cd, activating)
 end
 
 function source_activated(cd)
-	activate_signal(cd, true)
+	if (mode == "mode_hide") then
+		activate_signal(cd, true)
+	end
 end
 
 function source_deactivated(cd)
-	activate_signal(cd, false)
+	if (mode == "mode_show") then
+		activate_signal(cd, true)
+	end
 end
 
 function settings_modified(props, prop, settings)
@@ -172,6 +159,12 @@ function script_properties()
 	return props
 end
 
+function on_event(event)
+	if event == obs.OBS_FRONTEND_EVENT_SCENE_CHANGED then
+		activate(true)
+	end
+end
+
 function script_description()
 	return "Sets a source to show/hide on a timer."
 end
@@ -196,18 +189,10 @@ end
 
 function script_load(settings)
 	local sh = obs.obs_get_signal_handler()
-	obs.signal_handler_connect(sh, "source_show", source_activated)
-	obs.signal_handler_connect(sh, "source_hide", source_deactivated)
+	obs.signal_handler_connect(sh, "source_activate", source_activated)
+	obs.signal_handler_connect(sh, "source_deactive", source_deactivated)
+
+	obs.obs_frontend_add_event_callback(on_event)
 
 	settings_ = settings
-end
-
-function script_unload()
-	local source = obs.obs_get_source_by_name(source_name)
-
-	if source ~= nil then
-		obs.obs_source_set_enabled(source, true)
-	end
-
-	obs.obs_source_release(source)
 end
