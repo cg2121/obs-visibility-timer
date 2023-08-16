@@ -2,6 +2,7 @@ local repeat_hold, repeat_source
 
 obs           = obslua
 source_name   = ""
+group_name    = ""
 mode          = ""
 total_ms      = 0
 delay         = 0
@@ -10,11 +11,34 @@ start_visible = true
 settings_     = nil
 
 function get_item()
-	local source = obs.obs_frontend_get_current_scene()
-	local scene = obs.obs_scene_from_source(source)
-	local item = obs.obs_scene_find_source(scene, source_name)
-	obs.obs_source_release(source)
-	return item
+	
+	if group_name ~= "" then
+		local sceneSource = obs.obs_frontend_get_current_scene()
+		local scene = obs.obs_scene_from_source(sceneSource)		
+		local gSceneItem = obs.obs_scene_find_source(scene, group_name)		
+		if gSceneItem ~= nil then
+			local groupItems = obs.obs_sceneitem_group_enum_items(gSceneItem)
+			if groupItems ~= nil then
+				for _, sceneitem in ipairs(groupItems) do
+					local sceneGroupItemSource = obs.obs_sceneitem_get_source(sceneitem)
+					if sceneGroupItemSource ~= nil then
+						local isn = obs.obs_source_get_name(sceneGroupItemSource)
+						if source_name == isn then
+							obs.obs_sceneitem_release(sceneitem)
+							return sceneitem
+						end
+					end					
+				end
+			end			
+		end
+	else
+		local source = obs.obs_frontend_get_current_scene()
+		local scene = obs.obs_scene_from_source(source)
+		local item = obs.obs_scene_find_source(scene, source_name)
+		obs.obs_source_release(source)
+		return item
+	end
+
 end
 
 function enable_source()
@@ -70,7 +94,7 @@ function start_timer()
 	obs.timer_remove(start_timer)
 end
 
-function activate(activating)
+function activate(activating)	
 	obs.timer_remove(start_timer)
 	obs.timer_remove(repeat_hold)
 	obs.timer_remove(repeat_source)
@@ -79,9 +103,9 @@ function activate(activating)
 	obs.timer_remove(toggle_source)
 
 	if activating then
-		if delay ~= 0 then
+		if delay ~= 0 then			
 			obs.timer_add(start_timer, delay)
-		else
+		else			
 			start_timer()
 		end
 	end
@@ -136,12 +160,14 @@ function script_properties()
 	obs.obs_property_list_add_string(mode, "Show source after specified time", "mode_show")
 	obs.obs_property_list_add_string(mode, "Repeat", "mode_repeat")
 
+	local pg = obs.obs_properties_add_list(props, "sourcegroup", "Group", obs.OBS_COMBO_TYPE_EDITABLE, obs.OBS_COMBO_FORMAT_STRING)
 	local p = obs.obs_properties_add_list(props, "source", "Source", obs.OBS_COMBO_TYPE_EDITABLE, obs.OBS_COMBO_FORMAT_STRING)
 	local sources = obs.obs_enum_sources()
 	if sources ~= nil then
 		for _, source in ipairs(sources) do
 			local name = obs.obs_source_get_name(source)
 			obs.obs_property_list_add_string(p, name, name)
+			obs.obs_property_list_add_string(pg, name, name)
 		end
 	end
 	obs.source_list_release(sources)
@@ -160,7 +186,7 @@ function script_properties()
 end
 
 function on_event(event)
-	if event == obs.OBS_FRONTEND_EVENT_SCENE_CHANGED then
+	if event == obs.OBS_FRONTEND_EVENT_FINISHED_LOADING then		
 		activate(true)
 	end
 end
@@ -174,6 +200,7 @@ function script_update(settings)
 	delay = obs.obs_data_get_int(settings, "delay_ms")
 	hold = obs.obs_data_get_int(settings, "hold_ms")
 	source_name = obs.obs_data_get_string(settings, "source")
+	group_name = obs.obs_data_get_string(settings, "sourcegroup")
 	mode = obs.obs_data_get_string(settings, "mode")
 	start_visible = obs.obs_data_get_bool(settings, "start_visible")
 
@@ -187,7 +214,7 @@ function script_defaults(settings)
 	obs.obs_data_set_default_bool(setting, "start_visible", true)
 end
 
-function script_load(settings)
+function script_load(settings)	
 	local sh = obs.obs_get_signal_handler()
 	obs.signal_handler_connect(sh, "source_activate", source_activated)
 	obs.signal_handler_connect(sh, "source_deactive", source_deactivated)
