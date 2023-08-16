@@ -1,6 +1,6 @@
 # obs-visibility-timer
 
-This is <strong>an improved</script> visibility timer script for OBS Studio with the following options:
+This is <strong>an improved</strong> visibility timer script for OBS Studio with the following options:
 
 1. Group: select the group that contains the source (optional)
 2. Source: select source3. 
